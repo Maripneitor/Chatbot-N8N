@@ -1,0 +1,123 @@
+{
+  "name": "02 - Cron Recordatorios de Préstamos (8:00 AM)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-cron",
+      "name": "Disparador Diario 8:00 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/bot/loans/expiring-soon",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-secret-token",
+              "value": "clave_secreta_compartida_n8n_node"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-expiring",
+      "name": "API: Consultar Préstamos por Vencer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data.expiringLoans",
+        "options": {}
+      },
+      "id": "node-split-loans",
+      "name": "Separar Lista de Préstamos",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 3,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegramId }}",
+        "text": "=⏰ *Recordatorio de Préstamo - Biblioteca Escolar*\n\nHola *{{ $json.studentName }}*,\n\nTe recordamos que tu préstamo del libro *\"{{ $json.bookTitle }}\"* vence mañana ({{ $json.dueDate }}).\n\n💡 *Opciones:*\n• Si ya terminaste de leerlo, por favor acude a biblioteca para su entrega física.\n• Si necesitas conservarlo más días, puedes escribir a este chat: *\"Renovar mi libro de {{ $json.bookTitle }}\"* para extender tu préstamo digitalmente.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "node-send-telegram-dm",
+      "name": "Enviar DM a Estudiante",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        940,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Disparador Diario 8:00 AM": {
+      "main": [
+        [
+          {
+            "node": "API: Consultar Préstamos por Vencer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API: Consultar Préstamos por Vencer": {
+      "main": [
+        [
+          {
+            "node": "Separar Lista de Préstamos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar Lista de Préstamos": {
+      "main": [
+        [
+          {
+            "node": "Enviar DM a Estudiante",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

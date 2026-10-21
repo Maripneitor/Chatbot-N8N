@@ -1,0 +1,32 @@
+{
+  "name": "gestor-biblioteca-api",
+  "version": "1.0.0",
+  "description": "API REST y orquestación para Chatbot de Biblioteca Escolar con IA, Telegram, n8n y RFID",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "db:init": "node scripts/init-db.js",
+    "test": "node scripts/test-api.js"
+  },
+  "keywords": [
+    "telegram-bot",
+    "n8n",
+    "ai",
+    "library",
+    "rfid",
+    "express",
+    "postgresql"
+  ],
+  "author": "Equipo Proyecto Biblioteca",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

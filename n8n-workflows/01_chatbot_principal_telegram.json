@@ -1,0 +1,534 @@
+{
+  "name": "01 - Chatbot Biblioteca Escolar (Telegram + IA + API)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "node-telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        180,
+        400
+      ],
+      "webhookId": "telegram-bot-incoming",
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message.text }}",
+        "hasOutputParser": false,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Eres el asistente inteligente de la biblioteca escolar de Tuxtla Gutiérrez. Analiza el mensaje del estudiante y extrae la intención y parámetros en formato JSON estricto (únicamente el objeto JSON):\n\n{\n  \"intencion\": \"buscar_libro\" | \"consultar_prestamos\" | \"renovar_prestamo\" | \"vincular_estudiante\" | \"general\",\n  \"query_busqueda\": \"término, libro o autor a buscar\",\n  \"titulo_libro_renovar\": \"título del libro que desea renovar\",\n  \"student_code\": \"matrícula escolar si desea vincularse (ej. EST-202401)\",\n  \"respuesta_amable\": \"respuesta conversacional si solo saludó o hizo una pregunta general\"\n}\n\nEjemplos:\n- \"¿Tienen libros de cálculo de James Stewart?\" -> {\"intencion\": \"buscar_libro\", \"query_busqueda\": \"calculo stewart\"}\n- \"mis préstamos\" o \"¿cuándo vencen mis libros?\" o \"¿tengo multas?\" -> {\"intencion\": \"consultar_prestamos\"}\n- \"renovar cálculo\" o \"extender mi libro de álgebra\" -> {\"intencion\": \"renovar_prestamo\", \"titulo_libro_renovar\": \"cálculo\"}\n- \"mi matrícula es EST-202401\" o \"vincular EST-202401\" -> {\"intencion\": \"vincular_estudiante\", \"student_code\": \"EST-202401\"}\n- \"hola, buenos días\" -> {\"intencion\": \"general\", \"respuesta_amable\": \"¡Hola! ¿En qué puedo ayudarte hoy con la biblioteca escolar?\"}"
+            }
+          ]
+        }
+      },
+      "id": "node-ia-nlp",
+      "name": "Motor IA (NLP Intent)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        420,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('Telegram Trigger').first().json.message;\nconst text = trigger.text || '';\nconst lower = text.toLowerCase().trim();\nconst chatId = trigger.chat.id;\n\nlet parsed = {\n  chatId: chatId,\n  originalText: text,\n  intencion: 'general',\n  query_busqueda: '',\n  titulo_libro_renovar: '',\n  student_code: '',\n  respuesta_amable: ''\n};\n\n// 1. Procesar respuesta del modelo de IA si existe\nlet aiOutput = $json.text || $json.output || '';\nif (typeof aiOutput === 'string' && aiOutput.includes('{')) {\n  try {\n    const clean = aiOutput.replace(/```json/g, '').replace(/```/g, '').trim();\n    const aiJson = JSON.parse(clean);\n    if (aiJson.intencion) parsed.intencion = aiJson.intencion;\n    if (aiJson.query_busqueda) parsed.query_busqueda = aiJson.query_busqueda;\n    if (aiJson.titulo_libro_renovar) parsed.titulo_libro_renovar = aiJson.titulo_libro_renovar;\n    if (aiJson.student_code) parsed.student_code = aiJson.student_code;\n    if (aiJson.respuesta_amable) parsed.respuesta_amable = aiJson.respuesta_amable;\n  } catch (e) {}\n}\n\n// 2. Capa de respaldo inteligente (Reglas y Comandos directos)\nconst matriculaMatch = text.match(/EST[-\\s]?\\d+/i) || text.match(/vincular\\s+([A-Za-z0-9-_]+)/i);\n\nif (matriculaMatch || lower.startsWith('/vincular') || lower.includes('matrícula') || lower.includes('matricula')) {\n  parsed.intencion = 'vincular_estudiante';\n  parsed.student_code = matriculaMatch ? matriculaMatch[0].toUpperCase().replace(/\\s/g, '-') : text.replace(/\\/vincular/i, '').replace(/vincular/i, '').trim();\n} else if (lower === '/mis_prestamos' || lower.includes('prestam') || lower.includes('venc') || lower.includes('multa') || lower.includes('mis libros')) {\n  parsed.intencion = 'consultar_prestamos';\n} else if (lower.includes('renov') || lower.includes('extender') || lower.includes('prórroga') || lower.includes('prorroga')) {\n  parsed.intencion = 'renovar_prestamo';\n  parsed.titulo_libro_renovar = parsed.titulo_libro_renovar || text.replace(/renovar/i, '').replace(/libro/i, '').replace(/mi/i, '').trim();\n} else if (lower.includes('buscar') || lower.includes('libro') || lower.includes('tienen') || lower.includes('hay') || lower.includes('disponible') || lower.includes('stewart') || lower.includes('calculo') || lower.includes('fisica') || lower.includes('algebra')) {\n  parsed.intencion = 'buscar_libro';\n  parsed.query_busqueda = parsed.query_busqueda || text.replace(/tienen/i, '').replace(/libros/i, '').replace(/libro/i, '').replace(/de/i, '').replace(/buscar/i, '').trim();\n} else if (lower === '/start' || lower === '/ayuda' || lower.includes('hola') || lower.includes('buenos') || lower.includes('buenas')) {\n  parsed.intencion = 'general';\n  parsed.respuesta_amable = `👋 ¡Hola ${trigger.from.first_name || ''}! Soy el asistente virtual de la biblioteca escolar de Tuxtla Gutiérrez. 📚\\n\\nPuedes pedirme en cualquier momento:\\n🔍 *Buscar libros*: \"¿Tienen libros de cálculo de Stewart?\"\\n📋 *Ver tus préstamos*: \"¿Cuándo vencen mis libros?\" o /mis_prestamos\\n🔄 *Renovar libros*: \"Renovar mi libro de física\"\\n🔗 *Vincularte*: \"Mi matrícula es EST-202401\"`;\n}\n\nreturn parsed;"
+      },
+      "id": "node-parse-intent",
+      "name": "Parsear y Clasificar Mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "consultar_prestamos",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "prestamos"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "renovar_prestamo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "renovar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "buscar_libro",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "buscar_libro"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "vincular_estudiante",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "vincular"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "node-switch-intenciones",
+      "name": "Enrutador Central de Servicios",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        920,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/bot/loans/status",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "telegram_id",
+              "value": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-secret-token",
+              "value": "clave_secreta_compartida_n8n_node"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-prestamos",
+      "name": "API: Consultar Préstamos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{\n  (() => {\n    const d = $json.data;\n    if (!d || !d.registered) return '⚠️ Tu cuenta de Telegram aún no está vinculada.\\n\\nEscribe: \"Mi matrícula es EST-202401\" para asociar tu cuenta.';\n    if (!d.loans || d.loans.length === 0) return '📋 Estado de tus Préstamos (' + d.student.name + '):\\n\\nNo tienes libros prestados actualmente.';\n    let msg = '📋 Estado de tus Préstamos (' + d.student.name + '):\\n\\n';\n    for (const l of d.loans) {\n      msg += '📖 ' + l.bookTitle + '\\n🗓️ Vence: ' + l.dueDate + ' (' + l.status + ')\\n🔄 Renovaciones: ' + l.renewalsMade + '/' + l.maxRenewals + '\\n\\n';\n    }\n    if (d.student.hasPenalty) {\n      msg += '⚠️ Tienes una multa pendiente de $' + d.student.penaltyAmount + ' MXN';\n    }\n    return msg;\n  })()\n}}",
+        "additionalFields": {}
+      },
+      "id": "node-resp-prestamos",
+      "name": "Enviar Estado Préstamos",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1460,
+        180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:3000/api/bot/loans/renew",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "telegram_id",
+              "value": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
+            },
+            {
+              "name": "book_title",
+              "value": "={{ $json.titulo_libro_renovar || $json.originalText }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-secret-token",
+              "value": "clave_secreta_compartida_n8n_node"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-renovar",
+      "name": "API: Renovar Préstamo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{\n  (() => {\n    const d = $json.data;\n    if (d && d.success) {\n      return '🔄 ' + d.message + '\\n🗓️ Nueva entrega: ' + d.newDueDate;\n    }\n    return '⚠️ ' + (d && d.message ? d.message : ($json.message || 'No fue posible renovar el préstamo.'));\n  })()\n}}",
+        "additionalFields": {}
+      },
+      "id": "node-resp-renovacion",
+      "name": "Enviar Resultado Renovación",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1460,
+        340
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/bot/books",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.query_busqueda || $json.originalText || 'calculo' }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-secret-token",
+              "value": "clave_secreta_compartida_n8n_node"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-buscar-libros",
+      "name": "API: Buscar Libros",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{\n  (() => {\n    const d = $json.data;\n    if (!d || !d.books || d.books.length === 0) return '📚 No encontramos libros con ese término en el acervo. Intenta con otro autor o título.';\n    let msg = '📚 Libros Encontrados (' + d.totalFound + '):\\n\\n';\n    for (const b of d.books) {\n      msg += '📖 ' + b.title + '\\n✍️ Autor: ' + b.author + '\\n📍 Estante: ' + b.locationShelf + '\\n📂 ' + b.statusText;\n      if (b.isDigital && b.digitalUrl) {\n        msg += '\\n🔗 Digital: ' + b.digitalUrl;\n      }\n      msg += '\\n\\n---\\n\\n';\n    }\n    return msg;\n  })()\n}}",
+        "additionalFields": {}
+      },
+      "id": "node-resp-libros",
+      "name": "Enviar Resultados Búsqueda",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1460,
+        500
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:3000/api/bot/students/register",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "student_code",
+              "value": "={{ $json.student_code }}"
+            },
+            {
+              "name": "telegram_id",
+              "value": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-secret-token",
+              "value": "clave_secreta_compartida_n8n_node"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-vincular",
+      "name": "API: Vincular Estudiante",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{\n  (() => {\n    const d = $json.data;\n    if (d && d.success) {\n      return '🎉 ' + d.message + '\\n\\nYa puedes consultar tus préstamos activos enviando /mis_prestamos.';\n    }\n    return '⚠️ ' + (d && d.message ? d.message : ($json.message || 'No se pudo realizar la vinculación.'));\n  })()\n}}",
+        "additionalFields": {}
+      },
+      "id": "node-resp-vincular",
+      "name": "Enviar Confirmación Vinculación",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1460,
+        660
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "={{ $json.respuesta_amable || \"👋 ¡Hola! Soy el asistente de la biblioteca escolar de Tuxtla Gutiérrez.\\n\\nPuedo ayudarte a:\\n🔍 Buscar disponibilidad de libros (ej. '¿Tienen cálculo de Stewart?')\\n📋 Ver tus préstamos actuales (ej. '¿Cuándo vencen mis libros?')\\n🔄 Renovar tus préstamos (ej. 'Renovar mi libro de física')\\n🔗 Vincularte con tu matrícula (ej. 'Mi matrícula es EST-202401')\" }}",
+        "additionalFields": {}
+      },
+      "id": "node-resp-general",
+      "name": "Enviar Respuesta General",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1220,
+        820
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Motor IA (NLP Intent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Motor IA (NLP Intent)": {
+      "main": [
+        [
+          {
+            "node": "Parsear y Clasificar Mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear y Clasificar Mensaje": {
+      "main": [
+        [
+          {
+            "node": "Enrutador Central de Servicios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrutador Central de Servicios": {
+      "main": [
+        [
+          {
+            "node": "API: Consultar Préstamos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "API: Renovar Préstamo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "API: Buscar Libros",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "API: Vincular Estudiante",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar Respuesta General",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API: Consultar Préstamos": {
+      "main": [
+        [
+          {
+            "node": "Enviar Estado Préstamos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API: Renovar Préstamo": {
+      "main": [
+        [
+          {
+            "node": "Enviar Resultado Renovación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API: Buscar Libros": {
+      "main": [
+        [
+          {
+            "node": "Enviar Resultados Búsqueda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API: Vincular Estudiante": {
+      "main": [
+        [
+          {
+            "node": "Enviar Confirmación Vinculación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

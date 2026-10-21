@@ -1,0 +1,60 @@
+{
+  "name": "03 - Alertas de Seguridad RFID (Grupo Bibliotecarios)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alerta-rfid",
+        "options": {}
+      },
+      "id": "node-webhook-rfid",
+      "name": "Webhook Alerta RFID",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "webhookId": "alerta-rfid"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID || '-1001234567890' }}",
+        "text": "=🚨 *¡ALERTA DE SEGURIDAD EN BIBLIOTECA!* 🚨\n\nSe ha detectado la sustracción no autorizada de un ejemplar físico.\n\n📖 *Libro:* {{ $json.body.book ? $json.body.book.title : 'Desconocido' }}\n✍️ *Autor:* {{ $json.body.book ? $json.body.book.author : 'Desconocido' }}\n📍 *Estante registrado:* {{ $json.body.book ? $json.body.book.locationShelf : 'N/A' }}\n🏷️ *Tag RFID:* `{{ $json.body.rfidTag }}`\n🚪 *Sensor:* {{ $json.body.antennaId }}\n⏰ *Hora de detección:* {{ $json.body.detectedAt }}\n\n⚠️ *Motivo:* {{ $json.body.message }}\n\n_Por favor verifique de inmediato el arco de salida o contacte al personal en turno._",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "node-telegram-admin-alert",
+      "name": "Alertar Grupo Bibliotecarios",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        520,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram_bot_credentials",
+          "name": "Telegram Bot Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Alerta RFID": {
+      "main": [
+        [
+          {
+            "node": "Alertar Grupo Bibliotecarios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
